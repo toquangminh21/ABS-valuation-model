@@ -127,17 +127,83 @@ def main():
     '''
     print('\n=== Part 3: Weighted metrics: 5 simulations')
     start = time.time()
+    nSims = int(5)
+    monteTolerance = 0.01
 
-    # simulateWaterfallSequential will run doWaterfallSequential 10 more times, and output the weighted RIY and weighted AL of each tranche
-    # :return: a list of each tranche's pairs-tuple (weighted RIY, weighted AL)
-    weightedMetricsDict = ABS.simulateWaterfallSequential(5)
+    # simulateWaterfallSequential will run doWaterfallSequential nSims times, and output the weighted RIY and weighted AL of each tranche
+    # :return: a dictionary of lists with key = tranche, value = pairs-list [weighted RIY, weighted AL]
+    weightedMetricsDict = ABS.simulateWaterfallSequential(nSims)
 
     for tranche, metrics in weightedMetricsDict.items():
         print(f'{tranche} (Weighted RIY, Weighted AL): {metrics}')
 
+
+    # monteDict will store a dictionary with key = tranche, value = 3-items-tuples (weighted RIY, weighted AL, fair rate)
+    monteDict = ABS.runMonteSequential(nSims, monteTolerance)
+    for tranche, metrics in monteDict.items():
+        print(f'{tranche} (Weighted RIY, Weighted AL, Fair rate): {metrics}')
+        # Letter grade rating in Tranche class under RIY() method
+
+
+    end = time.time()
+    print(f'Time taken for {nSims} simulations: {end - start} seconds')
+
+
+    '''
+    Part 4: Simulations with multiprocessing
+    '''
+    print('\n=== Part 4: Simulations with multiprocessing: 5 simulations with 5 sub-processes'
+    inputQ = mp.Queue()
+    outputQ = mp.Queue()
+    nProcesses = 5
+    start = time.time()
+
+    # 5 simulations total
+    for i in range(5):
+        inputQ.put((ABS.runMonteSequential, (nSims/nProcesses, monteTolerance) ))
+
+    processes = [mp.Process(target=doWork, args=(inputQ, outputQ) ) for i in range(nProcesses)]
+
+    for process in processes:
+        process.start()
+
+    # join() to ensure main will not proceed until all sub-processes are done
+    for process in processes:
+        process.join()
+
+
+    result = {}
+    # [Weighted RIY, Weighted AL, Fair rate]
+    result['A'] = [0, 0, 0]
+    result['B'] = [0, 0, 0]
+
+    while True:
+        try:
+            r = outputQ.get(timeout=1)
+            for tranche, metricsTuple in r.items():
+                # Aggregate resulting tranche metrics and average them
+                result[tranche.subordination][0] += (r[tranche][0]) / nSims
+                result[tranche.subordination][1] += (r[tranche][1]) / nSims
+                result[tranche.subordination][2] += (r[tranche][2]) / nSims
+        except Empty:
+            break
+
+    print(f'Results: {result}')
+
     end = time.time()
 
-    print(f'Time taken for 5 simulations: {end - start} seconds')
+    print(f'{nSims} simulations with {nProcesses} processes time taken: {end - start} seconds')
+
+def doWork(inputQ, outputQ):
+    while True:
+        try:
+            function, args = inputQ.get(timeout=1)
+            result = function(*args)
+            # Put a dictionary with key = tranche, value = 3-items-tuples (weighted RIY, weighted AL, fair rate)
+            outputQ.put(result)
+        except:
+            print('A doWork sub-process has finished')
+            break
 
 if __name__ == '__main__':
     main()
